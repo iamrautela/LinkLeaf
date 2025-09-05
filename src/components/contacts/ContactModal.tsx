@@ -1,35 +1,70 @@
-import { useState } from 'react';
-import { X, User, Mail, Phone, Building, Tag } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { X, User, Mail, Phone, Building, Tag, Save } from 'lucide-react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { useToast } from '@/hooks/use-toast';
+import { Contact } from '@/lib/supabase';
+import { toast } from '@/components/ui/sonner';
 
-interface AddContactModalProps {
+const contactSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  email: z.string().email('Invalid email').optional().or(z.literal('')),
+  phone: z.string().optional(),
+  company: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+type ContactFormData = z.infer<typeof contactSchema>;
+
+interface ContactModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  contact?: Contact | null;
+  onSave: (data: Partial<Contact>) => Promise<void>;
 }
 
-const AddContactModal = ({ open, onOpenChange }: AddContactModalProps) => {
-  const { toast } = useToast();
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    company: '',
-    notes: '',
-  });
+const ContactModal: React.FC<ContactModalProps> = ({ 
+  open, 
+  onOpenChange, 
+  contact, 
+  onSave 
+}) => {
   const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const predefinedTags = ['Business', 'Client', 'Friend', 'Family', 'Partner', 'Colleague'];
+  const predefinedTags = ['Business', 'Client', 'Friend', 'Family', 'Partner', 'Colleague', 'Lead'];
 
-  const handleInputChange = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+    reset,
+    setValue,
+  } = useForm<ContactFormData>({
+    resolver: zodResolver(contactSchema),
+  });
+
+  useEffect(() => {
+    if (contact) {
+      setValue('name', contact.name);
+      setValue('email', contact.email || '');
+      setValue('phone', contact.phone || '');
+      setValue('company', contact.company || '');
+      setValue('notes', contact.notes || '');
+      setTags(contact.tags || []);
+    } else {
+      reset();
+      setTags([]);
+    }
+  }, [contact, setValue, reset]);
 
   const addTag = (tag: string) => {
     if (tag && !tags.includes(tag)) {
@@ -42,34 +77,31 @@ const AddContactModal = ({ open, onOpenChange }: AddContactModalProps) => {
     setTags(prev => prev.filter(tag => tag !== tagToRemove));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Basic validation
-    if (!formData.name.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "Contact name is required.",
-        variant: "destructive"
+  const onSubmit = async (data: ContactFormData) => {
+    setLoading(true);
+    try {
+      await onSave({
+        ...data,
+        tags,
+        email: data.email || null,
+        phone: data.phone || null,
+        company: data.company || null,
+        notes: data.notes || null,
       });
-      return;
+      
+      toast.success(contact ? 'Contact updated successfully!' : 'Contact created successfully!');
+      onOpenChange(false);
+      reset();
+      setTags([]);
+    } catch (error) {
+      toast.error('Failed to save contact');
+    } finally {
+      setLoading(false);
     }
-
-    // In a real app, this would make an API call
-    toast({
-      title: "Success!",
-      description: "Contact added successfully.",
-      variant: "default"
-    });
-
-    // Reset form and close modal
-    setFormData({ name: '', email: '', phone: '', company: '', notes: '' });
-    setTags([]);
-    onOpenChange(false);
   };
 
   const resetForm = () => {
-    setFormData({ name: '', email: '', phone: '', company: '', notes: '' });
+    reset();
     setTags([]);
     setNewTag('');
   };
@@ -79,28 +111,33 @@ const AddContactModal = ({ open, onOpenChange }: AddContactModalProps) => {
       onOpenChange(newOpen);
       if (!newOpen) resetForm();
     }}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center">
             <User className="w-5 h-5 mr-2 text-primary" />
-            Add New Contact
+            {contact ? 'Edit Contact' : 'Add New Contact'}
           </DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Name */}
+        <motion.form 
+          onSubmit={handleSubmit(onSubmit)} 
+          className="space-y-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.1 }}
+        >
           <div className="space-y-2">
             <Label htmlFor="name">Full Name *</Label>
             <Input
               id="name"
               placeholder="Enter contact name"
-              value={formData.name}
-              onChange={(e) => handleInputChange('name', e.target.value)}
-              required
+              {...register('name')}
             />
+            {errors.name && (
+              <p className="text-sm text-destructive">{errors.name.message}</p>
+            )}
           </div>
 
-          {/* Email */}
           <div className="space-y-2">
             <Label htmlFor="email">Email Address</Label>
             <div className="relative">
@@ -110,13 +147,14 @@ const AddContactModal = ({ open, onOpenChange }: AddContactModalProps) => {
                 type="email"
                 placeholder="contact@example.com"
                 className="pl-10"
-                value={formData.email}
-                onChange={(e) => handleInputChange('email', e.target.value)}
+                {...register('email')}
               />
             </div>
+            {errors.email && (
+              <p className="text-sm text-destructive">{errors.email.message}</p>
+            )}
           </div>
 
-          {/* Phone */}
           <div className="space-y-2">
             <Label htmlFor="phone">Phone Number</Label>
             <div className="relative">
@@ -126,13 +164,11 @@ const AddContactModal = ({ open, onOpenChange }: AddContactModalProps) => {
                 type="tel"
                 placeholder="+1 (555) 123-4567"
                 className="pl-10"
-                value={formData.phone}
-                onChange={(e) => handleInputChange('phone', e.target.value)}
+                {...register('phone')}
               />
             </div>
           </div>
 
-          {/* Company */}
           <div className="space-y-2">
             <Label htmlFor="company">Company</Label>
             <div className="relative">
@@ -141,23 +177,20 @@ const AddContactModal = ({ open, onOpenChange }: AddContactModalProps) => {
                 id="company"
                 placeholder="Company name"
                 className="pl-10"
-                value={formData.company}
-                onChange={(e) => handleInputChange('company', e.target.value)}
+                {...register('company')}
               />
             </div>
           </div>
 
-          {/* Tags */}
           <div className="space-y-2">
             <Label>Tags</Label>
             <div className="space-y-2">
-              {/* Predefined tags */}
               <div className="flex flex-wrap gap-1">
                 {predefinedTags.map(tag => (
                   <Badge
                     key={tag}
                     variant={tags.includes(tag) ? "default" : "secondary"}
-                    className="cursor-pointer"
+                    className="cursor-pointer hover:scale-105 transition-transform"
                     onClick={() => addTag(tag)}
                   >
                     {tag}
@@ -165,7 +198,6 @@ const AddContactModal = ({ open, onOpenChange }: AddContactModalProps) => {
                 ))}
               </div>
 
-              {/* Custom tag input */}
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Tag className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
@@ -191,14 +223,13 @@ const AddContactModal = ({ open, onOpenChange }: AddContactModalProps) => {
                 </Button>
               </div>
 
-              {/* Selected tags */}
               {tags.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {tags.map(tag => (
                     <Badge key={tag} variant="default" className="gap-1">
                       {tag}
                       <X 
-                        className="w-3 h-3 cursor-pointer" 
+                        className="w-3 h-3 cursor-pointer hover:text-destructive" 
                         onClick={() => removeTag(tag)}
                       />
                     </Badge>
@@ -208,19 +239,16 @@ const AddContactModal = ({ open, onOpenChange }: AddContactModalProps) => {
             </div>
           </div>
 
-          {/* Notes */}
           <div className="space-y-2">
             <Label htmlFor="notes">Notes</Label>
             <Textarea
               id="notes"
               placeholder="Additional notes about this contact..."
               rows={3}
-              value={formData.notes}
-              onChange={(e) => handleInputChange('notes', e.target.value)}
+              {...register('notes')}
             />
           </div>
 
-          {/* Actions */}
           <div className="flex justify-end space-x-2 pt-4">
             <Button
               type="button"
@@ -229,14 +257,21 @@ const AddContactModal = ({ open, onOpenChange }: AddContactModalProps) => {
             >
               Cancel
             </Button>
-            <Button type="submit">
-              Add Contact
+            <Button type="submit" disabled={loading}>
+              {loading ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <>
+                  <Save className="w-4 h-4 mr-2" />
+                  {contact ? 'Update' : 'Create'}
+                </>
+              )}
             </Button>
           </div>
-        </form>
+        </motion.form>
       </DialogContent>
     </Dialog>
   );
 };
 
-export default AddContactModal;
+export default ContactModal;
