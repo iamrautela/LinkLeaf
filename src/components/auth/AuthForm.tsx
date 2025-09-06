@@ -11,12 +11,24 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/sonner';
 
-const authSchema = z.object({
-  email: z.string().email('Please enter a valid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-});
+const createAuthSchema = (mode: 'signin' | 'signup') => {
+  const baseSchema = {
+    email: z.string().email('Please enter a valid email address'),
+    password: z.string().min(6, 'Password must be at least 6 characters'),
+  };
 
-type AuthFormData = z.infer<typeof authSchema>;
+  if (mode === 'signup') {
+    return z.object({
+      ...baseSchema,
+      firstName: z.string().min(1, 'First name is required'),
+      lastName: z.string().min(1, 'Last name is required'),
+    });
+  }
+
+  return z.object(baseSchema);
+};
+
+type AuthFormData = z.infer<ReturnType<typeof createAuthSchema>>;
 
 interface AuthFormProps {
   mode: 'signin' | 'signup';
@@ -34,7 +46,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ mode, onModeChange }) => {
     formState: { errors },
     reset,
   } = useForm<AuthFormData>({
-    resolver: zodResolver(authSchema),
+    resolver: zodResolver(createAuthSchema(mode)),
   });
 
   const onSubmit = async (data: AuthFormData) => {
@@ -42,12 +54,12 @@ const AuthForm: React.FC<AuthFormProps> = ({ mode, onModeChange }) => {
     try {
       const { error } = mode === 'signin' 
         ? await signIn(data.email, data.password)
-        : await signUp(data.email, data.password);
+        : await signUp(data.email, data.password, data.firstName || '', data.lastName || '');
 
       if (error) {
         toast.error(error.message);
       } else if (mode === 'signup') {
-        toast.success('Account created successfully! Please check your email to verify your account.');
+        toast.success('Account created successfully!');
         reset();
       }
     } catch (error) {
@@ -86,6 +98,45 @@ const AuthForm: React.FC<AuthFormProps> = ({ mode, onModeChange }) => {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            {mode === 'signup' && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="firstName">First Name</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                      <Input
+                        id="firstName"
+                        type="text"
+                        placeholder="First name"
+                        className="pl-10"
+                        {...register('firstName')}
+                      />
+                    </div>
+                    {errors.firstName && (
+                      <p className="text-sm text-destructive">{errors.firstName.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lastName">Last Name</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                      <Input
+                        id="lastName"
+                        type="text"
+                        placeholder="Last name"
+                        className="pl-10"
+                        {...register('lastName')}
+                      />
+                    </div>
+                    {errors.lastName && (
+                      <p className="text-sm text-destructive">{errors.lastName.message}</p>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <div className="relative">

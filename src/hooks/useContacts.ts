@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase, Contact } from '@/lib/supabase';
+import { apiClient, Contact } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/sonner';
 
@@ -12,15 +12,17 @@ export const useContacts = () => {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
-        .from('contacts')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+      const response = await apiClient.getContacts({
+        sortBy: 'created_at',
+        sortOrder: 'desc'
+      });
 
-      if (error) throw error;
-      setContacts(data || []);
-    } catch (error) {
+      if (response.success) {
+        setContacts(response.data.contacts);
+      } else {
+        throw new Error(response.error || 'Failed to fetch contacts');
+      }
+    } catch (error: any) {
       console.error('Error fetching contacts:', error);
       toast.error('Failed to load contacts');
     } finally {
@@ -32,21 +34,28 @@ export const useContacts = () => {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
-        .from('contacts')
-        .insert([
-          {
-            ...contactData,
-            user_id: user.id,
-          }
-        ])
-        .select()
-        .single();
+      const response = await apiClient.createContact({
+        name: contactData.name || '',
+        email: contactData.email,
+        phone: contactData.phone,
+        company: contactData.company,
+        jobTitle: contactData.jobTitle,
+        avatarUrl: contactData.avatarUrl,
+        notes: contactData.notes,
+        website: contactData.website,
+        address: contactData.address,
+        birthday: contactData.birthday,
+        isFavorite: contactData.isFavorite || false,
+        tags: contactData.tags?.map(tag => tag.name) || []
+      });
 
-      if (error) throw error;
-      setContacts(prev => [data, ...prev]);
-      return data;
-    } catch (error) {
+      if (response.success) {
+        setContacts(prev => [response.data.contact, ...prev]);
+        return response.data.contact;
+      } else {
+        throw new Error(response.error || 'Failed to create contact');
+      }
+    } catch (error: any) {
       console.error('Error creating contact:', error);
       throw error;
     }
@@ -54,22 +63,30 @@ export const useContacts = () => {
 
   const updateContact = async (id: string, contactData: Partial<Contact>) => {
     try {
-      const { data, error } = await supabase
-        .from('contacts')
-        .update({
-          ...contactData,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', id)
-        .select()
-        .single();
+      const response = await apiClient.updateContact(id, {
+        name: contactData.name,
+        email: contactData.email,
+        phone: contactData.phone,
+        company: contactData.company,
+        jobTitle: contactData.jobTitle,
+        avatarUrl: contactData.avatarUrl,
+        notes: contactData.notes,
+        website: contactData.website,
+        address: contactData.address,
+        birthday: contactData.birthday,
+        isFavorite: contactData.isFavorite,
+        tags: contactData.tags?.map(tag => tag.name)
+      });
 
-      if (error) throw error;
-      setContacts(prev => prev.map(contact => 
-        contact.id === id ? data : contact
-      ));
-      return data;
-    } catch (error) {
+      if (response.success) {
+        setContacts(prev => prev.map(contact => 
+          contact.id === id ? response.data.contact : contact
+        ));
+        return response.data.contact;
+      } else {
+        throw new Error(response.error || 'Failed to update contact');
+      }
+    } catch (error: any) {
       console.error('Error updating contact:', error);
       throw error;
     }
@@ -77,15 +94,15 @@ export const useContacts = () => {
 
   const deleteContact = async (id: string) => {
     try {
-      const { error } = await supabase
-        .from('contacts')
-        .delete()
-        .eq('id', id);
+      const response = await apiClient.deleteContact(id);
 
-      if (error) throw error;
-      setContacts(prev => prev.filter(contact => contact.id !== id));
-      toast.success('Contact deleted successfully');
-    } catch (error) {
+      if (response.success) {
+        setContacts(prev => prev.filter(contact => contact.id !== id));
+        toast.success('Contact deleted successfully');
+      } else {
+        throw new Error(response.error || 'Failed to delete contact');
+      }
+    } catch (error: any) {
       console.error('Error deleting contact:', error);
       toast.error('Failed to delete contact');
     }

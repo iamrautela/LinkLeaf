@@ -38,7 +38,7 @@ const NotFound = () => {
             Go Home
           </Button>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 };
